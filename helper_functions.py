@@ -36,19 +36,56 @@ from scipy.stats import norm
 
 def load_skeletal_data(csv_file):
     """
-    Load the skeletal coordinates from a CSV file into a pandas DataFrame.
+    Load the CSV file into a pandas DataFrame and ensure the coordinate columns
+    are numeric (float).
     
-    The CSV file should include columns for x, y, z coordinates and optionally other fields.
-    The joint ordering is assumed to follow the MATLAB code's convention.
+    Expected columns in the CSV:
+      ImageFlag, PersonID, x3D (m), y3D (m), z3D (m)
+    
+    If your actual CSV has different column names, adjust the renaming step.
     
     Parameters:
         csv_file (str): Path to the CSV file.
-    
+        
     Returns:
-        pd.DataFrame: DataFrame containing the skeletal data.
+        pd.DataFrame: DataFrame with columns ['ImageFlag','PersonID','x3D (m)','y3D (m)','z3D (m)'].
     """
+    # Read CSV with a header row. If your file has no header, set header=None and rename manually.
     df = pd.read_csv(csv_file)
+    
+    # Optional: If your CSV columns differ, rename them accordingly:
+    # e.g., df.columns = ["ImageFlag", "PersonID", "x3D (m)", "y3D (m)", "z3D (m)"]
+    # If your file already has the correct header, you can skip or adjust this step.
+    
+    expected_cols = ["ImageFlag", "PersonID", "x3D (m)", "y3D (m)", "z3D (m)"]
+    if list(df.columns[:5]) != expected_cols:
+        df.columns = expected_cols
+    
+    # Convert coordinate columns to numeric (float)
+    for col in ["x3D (m)", "y3D (m)", "z3D (m)"]:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
+    
+    # Check for any NaN values that might indicate non-numeric data
+    if df[["x3D (m)", "y3D (m)", "z3D (m)"]].isnull().any().any():
+        raise ValueError("Some x3D (m), y3D (m), or z3D (m) values could not be converted to float.")
+    
     return df
+
+def get_image_data(df, image_flag):
+    """
+    Extract rows corresponding to a specific image (ImageFlag).
+    
+    Parameters:
+        df (pd.DataFrame): The full dataset with columns ['ImageFlag','PersonID','x3D (m)','y3D (m)','z3D (m)'].
+        image_flag (str): The unique identifier of the image (e.g., '000-14').
+        
+    Returns:
+        pd.DataFrame: Subset of rows from df where ImageFlag == image_flag.
+    """
+    subset = df[df["ImageFlag"] == image_flag].copy()
+    # Sort by PersonID or any other logic you need:
+    # subset.sort_values(by="PersonID", inplace=True)
+    return subset
 
 # Skeletal Assignment
 
@@ -73,7 +110,7 @@ def assign_skeletal_parts(frame_data):
         raise ValueError("The input data contains NaN values. Please clean your CSV file.")
     
     parts = {
-        'head': data[3, 0:3],            # Head at index 3 (MATLAB index 4 -> Python index 3)
+        'head': data[3, 0:3],            # Head at index 3 
         'right_shoulder': data[4, 0:3],    # Right Shoulder at index 4
         'left_shoulder': data[8, 0:3],     # Left Shoulder at index 8
         'right_ankle': data[14, 0:3],      # Right Ankle at index 14
@@ -81,55 +118,65 @@ def assign_skeletal_parts(frame_data):
     }
     return parts
 
-def visualize_skeleton(frame_data, connections=None):
+def visualize_skeleton(frame_df, title="3D Skeleton Plot with Depth Visualization", section=1):
     """
-    Visualize a 3D skeleton based on joint data and their connections.
+    Create a 3D scatter plot from the 'x3D (m)', 'y3D (m)', 'z3D (m)' columns of the given DataFrame,
+    and connect the points with lines to form a skeleton.
     
     Parameters:
-        frame_data (pd.DataFrame or np.ndarray): Skeletal data for one frame.
-            Each row is a joint with columns [x, y, z].
-        connections (list of tuples): List of pairs of indices (0-indexed) defining connections
-            between joints. If None, a default connection set is used.
+        frame_df (pd.DataFrame): Must contain 'x3D (m)', 'y3D (m)', 'z3D (m)' columns.
+        title (str): Title for the plot.
+        section (int): Section number to display in the title.
     """
-    # Force conversion to a numpy array of type float and check for NaNs.
-    try:
-        data = np.array(frame_data, dtype=float)
-    except Exception as e:
-        raise ValueError("Could not convert frame_data to a float array: " + str(e))
+    # Convert columns to NumPy arrays of type float
+    x = frame_df["x3D (m)"].to_numpy(dtype=float)
+    y = frame_df["y3D (m)"].to_numpy(dtype=float)
+    z = frame_df["z3D (m)"].to_numpy(dtype=float)
     
-    if np.isnan(data).any():
-        raise ValueError("The input data contains NaN values. Please clean your CSV file.")
-    
-    # Default connections if none provided (based on MATLAB example)
-    if connections is None:
-        connections = [
-            (0, 1), (1, 2), (2, 3),         # Spine and head
-            (2, 4), (4, 5), (5, 6), (6, 7),   # Right arm
-            (2, 8), (8, 9), (9, 10), (10, 11),# Left arm
-            (0, 12), (12, 13), (13, 14), (14, 15),  # Right leg
-            (0, 16), (16, 17), (17, 18), (18, 19)   # Left leg
-        ]
-    
+    # Create a new figure and add a 3D subplot
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
     
-    # Extract coordinates
-    x = data[:, 0]
-    y = data[:, 1]
-    z = data[:, 2]
-    
     # Create a scatter plot with color indicating depth (z-coordinate)
     sc = ax.scatter(x, y, z, c=z, cmap='jet', s=50)
-    plt.colorbar(sc, label='Depth (Z)')
+    plt.colorbar(sc, label='Depth (z3D (m))')
+    
+    # Set axis labels and plot title
     ax.set_xlabel('X-axis')
     ax.set_ylabel('Y-axis')
     ax.set_zlabel('Z-axis')
-    ax.set_title('3D Skeleton Visualization')
+    ax.set_title(f'{title} - Section {section}')
     
-    # Connect joints based on the connections list
+    # Set axis limits to match a 1280x960 frame (adjust these limits as needed)
+    ax.set_xlim([-0.5, 0.5])
+    ax.set_ylim([-1, 1])
+    ax.set_zlim([np.min(z) - 0.5, np.max(z) + 0.5])
+    
+    # Set equal aspect ratio 
+    ax.set_box_aspect((1, 1, 1))
+    
+    # Enable grid lines and default 3D view
+    ax.grid(True)
+    
+    # Display the plot before drawing connections (hold on)
+    plt.pause(0.1)
+    
+    connections = [
+        (0, 1), (1, 2), (2, 3),         # Spine and head
+        (2, 4), (4, 5), (5, 6), (6, 7),   # Right arm
+        (2, 8), (8, 9), (9, 10), (10, 11),# Left arm
+        (0, 12), (12, 13), (13, 14), (14, 15),  # Right leg
+        (0, 16), (16, 17), (17, 18), (18, 19)   # Left leg
+    ]
+    
+    # Connect the joints to form the skeleton
     for (i, j) in connections:
         ax.plot([x[i], x[j]], [y[i], y[j]], [z[i], z[j]], 'k-', linewidth=2)
     
+    # Enhance Z-axis visualization: Set the label and invert Z-axis if needed
+    ax.set_zlabel('Depth (Z-axis)')
+    ax.invert_zaxis()  # Invert Z-axis to mimic MATLAB's 'set(gca, ''ZDir'', ''reverse'')'
+
     plt.show()
 
 # Anthropometric Calculations
