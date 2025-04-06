@@ -100,15 +100,13 @@ def assign_skeletal_parts(frame_data):
         dict: Keys are 'head', 'right_shoulder', 'left_shoulder', 'right_ankle', 'left_ankle'
               with their (x, y, z) coordinates as numpy arrays.
     """
-    # Convert frame_data to a numpy array of type float
-    try:
+    # If frame_data is a DataFrame, skip the first two metadata columns.
+    if hasattr(frame_data, 'iloc'):
+        # Convert columns 2 onward (i.e., starting from the third column) to a NumPy array of type float
+        data = frame_data.iloc[:, 2:].to_numpy(dtype=float)
+    else:
         data = np.array(frame_data, dtype=float)
-    except Exception as e:
-        raise ValueError("Could not convert frame_data to a float array: " + str(e))
-    
-    if np.isnan(data).any():
-        raise ValueError("The input data contains NaN values. Please clean your CSV file.")
-    
+
     parts = {
         'head': data[3, 0:3],            # Head at index 3 
         'right_shoulder': data[4, 0:3],    # Right Shoulder at index 4
@@ -376,4 +374,3 @@ def plot_weight_distribution(weights):
     plt.ylabel('Probability Density')
     plt.title('Distribution of Weights')
     plt.show()
-
