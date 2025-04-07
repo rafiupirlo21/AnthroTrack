@@ -157,6 +157,71 @@ class ProjectGUI:
             helpers.plot_synthetic_vs_real(X, y_samples, X_synth, y_synth)
             helpers.plot_weight_distribution(y_synth)
         
+        elif option == 7:
+
+        # Dashboard: show all results and plots from options 1-6 in one press.
+        # For demonstration, we assume the first 20 rows in the CSV represent one image.
+        # First, extract only the coordinate columns (skip metadata, e.g., first 2 columns)
+            frame = self.df.iloc[0:20]
+            coord_data = frame.iloc[:, 2:]  # only coordinate columns
+            
+            # Assign skeletal parts from the coordinate data
+            parts = helpers.assign_skeletal_parts(coord_data)
+            
+            # Calculate anthropometric measurements
+            height_m = helpers.calculate_height(parts['head'], parts['left_ankle'], parts['right_ankle'])
+            height_in = helpers.calculate_height(parts['head'], parts['left_ankle'], parts['right_ankle'], convert_to_inches=True)
+            girth = helpers.calculate_girth(parts['left_shoulder'], parts['right_shoulder'])
+            
+            # For weight estimation and regression, create synthetic sample data.
+            # Reference table for height (inches) and weight (lbs) for BMI class 22:
+            ref_heights = np.linspace(58, 76, 19)
+            ref_weights = np.array([105, 109, 112, 116, 120, 124, 128, 132, 136, 140,
+                                    144, 149, 153, 157, 162, 166, 171, 176, 180])
+            # Generate sample measurements (simulated data)
+            sample_heights = np.random.uniform(60, 70, 30)  # in inches
+            sample_girths = np.random.uniform(0.3, 0.4, 30)  # in meters
+            sample_weights = np.interp(sample_heights, ref_heights, ref_weights)
+            X = np.column_stack((sample_heights, sample_girths))
+            
+            # Fit a linear regression model to estimate weight
+            model, coeffs = helpers.fit_weight_regression(X, sample_weights, regression_type='linear')
+            
+            # Calculate RMSE for sample heights (as a simple evaluation)
+            rmse_val = helpers.calculate_rmse(sample_heights)
+            
+            # Create a new Toplevel dashboard window
+            dashboard = tk.Toplevel(self.master)
+            dashboard.title("Dashboard: All Results")
+            
+            # Display text results
+            lbl_height = tk.Label(dashboard, text=f"Calculated Height: {height_m:.2f} m ({height_in:.2f} in)")
+            lbl_girth = tk.Label(dashboard, text=f"Calculated Girth (above waist): {girth:.2f} m")
+            lbl_coeffs = tk.Label(dashboard, text=f"Regression Coefficients: {coeffs}")
+            lbl_rmse = tk.Label(dashboard, text=f"Sample RMSE (height): {rmse_val:.2f}")
+            
+            lbl_height.pack(pady=5)
+            lbl_girth.pack(pady=5)
+            lbl_coeffs.pack(pady=5)
+            lbl_rmse.pack(pady=5)
+            
+            # Add buttons to display the plots:
+            btn_skeleton = tk.Button(dashboard, text="Show 3D Skeleton", 
+                                    command=lambda: helpers.visualize_skeleton(coord_data, title="3D Skeleton Plot"))
+            btn_regression = tk.Button(dashboard, text="Show Regression Plot", 
+                                    command=lambda: helpers.plot_regression_results(X, sample_weights, model, title="Weight Regression (Linear)"))
+            btn_synth = tk.Button(dashboard, text="Show Synthetic Data Plot", 
+                                command=lambda: (
+                                    lambda X_synth, y_synth: [helpers.plot_synthetic_vs_real(X, sample_weights, X_synth, y_synth),
+                                                                helpers.plot_weight_distribution(y_synth)]
+                                )(*helpers.synthesize_data(model, 100, (sample_heights.min(), sample_heights.max()),
+                                                            (sample_girths.min(), sample_girths.max()), noise_std=2.0)))
+            
+            btn_skeleton.pack(pady=5)
+            btn_regression.pack(pady=5)
+            btn_synth.pack(pady=5)
+
+        
         else:
             messagebox.showerror("Error", "Invalid operation selected!")
 
