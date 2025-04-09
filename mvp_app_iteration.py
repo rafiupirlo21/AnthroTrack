@@ -2,17 +2,16 @@
 """
 app.py
 
-A Windows app for the ENCM 509 Anthropometric Measurement Project with three tabs:
+A Windows app for the ENCM 509 Anthropometric Measurement Project with two tabs:
   1. About – Introduces Our Team and Our App.
-  2. Main – Provides data visualization and analysis operations (1 to 7):
+  2. Main – Provides data visualization and analysis operations (1 to 7) including:
          - Visualize Skeleton
          - Calculate Height
          - Calculate Girth
          - Estimate Weight from Height & Girth using regression (multiple models)
          - Data Evaluation (RMSE)
          - Generate Synthetic Data
-         - Export Data
-  3. Dashboard – Displays outputs from operations
+         - Export Data (all outputs and graphs into a PDF)
 
 Users may choose whether to run operations on a single 20-row block (a specific image frame)
 or on all available frames for a given Person ID.
@@ -21,7 +20,7 @@ All styling uses shades of pink.
 
 Code Running Instructions:
   1. Install dependencies:
-         pip install numpy pandas matplotlib scikit-learn scipy
+         pip install numpy pandas matplotlib scikit-learn scipy reportlab
   2. Place this file along with helper_functions.py in the same folder.
   3. Run:
          python app.py
@@ -36,14 +35,12 @@ import webbrowser
 import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
-
 import helper_functions as helpers  # Import our helper functions
 
 # Define pink-themed colors
-BG_COLOR = "#FFC0CB"  # Light pink background
-TAB_BG = "#FFB6C1"  # Slightly darker pink for tabs
-BUTTON_BG = "#FF69B4"  # Hot pink for buttons
-
+BG_COLOR = "#FFC0CB"      # Light pink background
+TAB_BG = "#FFB6C1"        # Slightly darker pink for tabs
+BUTTON_BG = "#FF69B4"     # Hot pink for buttons
 
 class MainApp(tk.Tk):
     def __init__(self):
@@ -56,13 +53,13 @@ class MainApp(tk.Tk):
         # Variables for dropdown selections
         self.person_id_var = tk.StringVar()
         self.image_flag_var = tk.StringVar()
-        self.frame_mode_var = tk.StringVar(value="Single Frame")  # New: frame mode option
-        self.regression_model_var = tk.StringVar(value="Linear")  # For weight estimation
+        self.frame_mode_var = tk.StringVar(value="Single Frame")  # "Single Frame" or "All Frames"
+        self.regression_model_var = tk.StringVar(value="Linear")   # Regression model choice
 
         self.create_widgets()
 
     def create_widgets(self):
-        # Set up Notebook (tabs)
+        # Set up Notebook with two tabs: About and Main (Dashboard is merged in Main)
         style = ttk.Style()
         style.theme_use('clam')
         style.configure("TNotebook", background=BG_COLOR, borderwidth=0)
@@ -74,19 +71,16 @@ class MainApp(tk.Tk):
         self.notebook = ttk.Notebook(self, style="TNotebook")
         self.notebook.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
 
-        # Create tabs
+        # Create tabs: About and Main
         self.about_tab = tk.Frame(self.notebook, bg=BG_COLOR)
         self.main_tab = tk.Frame(self.notebook, bg=BG_COLOR)
-        self.dashboard_tab = tk.Frame(self.notebook, bg=BG_COLOR)
 
         self.notebook.add(self.about_tab, text="About")
         self.notebook.add(self.main_tab, text="Main")
-        self.notebook.add(self.dashboard_tab, text="Dashboard")
 
         # Populate tabs
         self.create_about_tab()
         self.create_main_tab()
-        self.create_dashboard_tab()
 
     def create_about_tab(self):
         # "Our Team" Section
@@ -107,8 +101,7 @@ class MainApp(tk.Tk):
         tk.Label(khadiza_frame, text="Khadiza Ahsan", bg=BG_COLOR, font=("Helvetica", 12, "bold")).pack(anchor=tk.W)
         tk.Label(khadiza_frame, text="Biomedical Engineering Student", bg=BG_COLOR).pack(anchor=tk.W)
         tk.Button(khadiza_frame, text="LinkedIn", bg=BUTTON_BG, fg="white",
-                  command=lambda: webbrowser.open("https://www.linkedin.com/in/khadizaprofile")).pack(anchor=tk.W,
-                                                                                                      pady=2)
+                  command=lambda: webbrowser.open("https://www.linkedin.com/in/khadizaprofile")).pack(anchor=tk.W, pady=2)
 
         # "Our App" Section
         app_frame = tk.LabelFrame(self.about_tab, text="Our App", bg=BG_COLOR, font=("Helvetica", 14, "bold"))
@@ -117,50 +110,36 @@ class MainApp(tk.Tk):
                  text="This project uses depth imaging for anthropometric measurements. Our app analyzes data from a depth camera, visualizes 3D skeletal data, and estimates biometric parameters.",
                  bg=BG_COLOR, wraplength=600, justify=tk.LEFT).pack(anchor=tk.W, padx=10, pady=5)
         tk.Button(app_frame, text="View GitHub Code", bg=BUTTON_BG, fg="white",
-                  command=lambda: webbrowser.open("https://github.com/yourgithubrepo")).pack(anchor=tk.W, padx=10,
-                                                                                             pady=5)
+                  command=lambda: webbrowser.open("https://github.com/yourgithubrepo")).pack(anchor=tk.W, padx=10, pady=5)
 
     def create_main_tab(self):
-        # Top frame for selecting Person ID, ImageFlag, Frame Mode, and Regression Model
+        # Top frame for selection controls
         selection_frame = tk.Frame(self.main_tab, bg=BG_COLOR)
         selection_frame.pack(fill=tk.X, padx=20, pady=10)
 
-        tk.Label(selection_frame, text="Select Person ID:", bg=BG_COLOR, font=("Helvetica", 12)).grid(row=0, column=0,
-                                                                                                      padx=5, pady=5,
-                                                                                                      sticky=tk.W)
+        tk.Label(selection_frame, text="Select Person ID:", bg=BG_COLOR, font=("Helvetica", 12)).grid(row=0, column=0, padx=5, pady=5, sticky=tk.W)
         self.id_combobox = ttk.Combobox(selection_frame, textvariable=self.person_id_var, state="readonly", width=15)
         self.id_combobox.grid(row=0, column=1, padx=5, pady=5)
         self.id_combobox.bind("<<ComboboxSelected>>", self.update_image_flags)
 
-        tk.Label(selection_frame, text="Select ImageFlag:", bg=BG_COLOR, font=("Helvetica", 12)).grid(row=0, column=2,
-                                                                                                      padx=5, pady=5,
-                                                                                                      sticky=tk.W)
-        self.image_flag_combobox = ttk.Combobox(selection_frame, textvariable=self.image_flag_var, state="readonly",
-                                                width=15)
+        tk.Label(selection_frame, text="Select ImageFlag:", bg=BG_COLOR, font=("Helvetica", 12)).grid(row=0, column=2, padx=5, pady=5, sticky=tk.W)
+        self.image_flag_combobox = ttk.Combobox(selection_frame, textvariable=self.image_flag_var, state="readonly", width=15)
         self.image_flag_combobox.grid(row=0, column=3, padx=5, pady=5)
 
-        tk.Label(selection_frame, text="Frame Mode:", bg=BG_COLOR, font=("Helvetica", 12)).grid(row=1, column=0, padx=5,
-                                                                                                pady=5, sticky=tk.W)
-        self.frame_mode_combobox = ttk.Combobox(selection_frame, textvariable=self.frame_mode_var, state="readonly",
-                                                width=15)
+        tk.Label(selection_frame, text="Frame Mode:", bg=BG_COLOR, font=("Helvetica", 12)).grid(row=1, column=0, padx=5, pady=5, sticky=tk.W)
+        self.frame_mode_combobox = ttk.Combobox(selection_frame, textvariable=self.frame_mode_var, state="readonly", width=15)
         self.frame_mode_combobox["values"] = ["Single Frame", "All Frames"]
         self.frame_mode_combobox.grid(row=1, column=1, padx=5, pady=5)
 
-        tk.Label(selection_frame, text="Select Regression Model:", bg=BG_COLOR, font=("Helvetica", 12)).grid(row=1,
-                                                                                                             column=2,
-                                                                                                             padx=5,
-                                                                                                             pady=5,
-                                                                                                             sticky=tk.W)
-        self.regression_model_combobox = ttk.Combobox(selection_frame, textvariable=self.regression_model_var,
-                                                      state="readonly", width=15)
+        tk.Label(selection_frame, text="Select Regression Model:", bg=BG_COLOR, font=("Helvetica", 12)).grid(row=1, column=2, padx=5, pady=5, sticky=tk.W)
+        self.regression_model_combobox = ttk.Combobox(selection_frame, textvariable=self.regression_model_var, state="readonly", width=15)
         self.regression_model_combobox["values"] = ["Linear", "Polynomial", "Bayesian", "All"]
         self.regression_model_combobox.grid(row=1, column=3, padx=5, pady=5)
 
         # Left frame for operation buttons
         options_frame = tk.Frame(self.main_tab, bg=BG_COLOR)
         options_frame.pack(side=tk.LEFT, fill=tk.Y, padx=20, pady=20)
-        tk.Label(options_frame, text="Data Visualization & Analysis", bg=BG_COLOR, font=("Helvetica", 14, "bold")).pack(
-            pady=10)
+        tk.Label(options_frame, text="Data Visualization & Analysis", bg=BG_COLOR, font=("Helvetica", 14, "bold")).pack(pady=10)
         tk.Button(options_frame, text="1. Visualize Skeleton", width=25, bg=BUTTON_BG, fg="white",
                   command=self.visualize_skeleton_op).pack(pady=5)
         tk.Button(options_frame, text="2. Calculate Height", width=25, bg=BUTTON_BG, fg="white",
@@ -176,21 +155,12 @@ class MainApp(tk.Tk):
         tk.Button(options_frame, text="7. Export Data", width=25, bg=BUTTON_BG, fg="white",
                   command=self.export_data_op).pack(pady=5)
 
-        # Right frame for preview/export area
-        preview_frame = tk.Frame(self.main_tab, bg=BG_COLOR)
-        preview_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=20, pady=20)
-        tk.Label(preview_frame, text="Preview/Export Area", bg=BG_COLOR, font=("Helvetica", 14, "bold")).pack(pady=10)
-        self.preview_text = tk.Text(preview_frame, wrap=tk.WORD, bg="white", fg="black")
+        # Right frame renamed as Dashboard: displays all outputs
+        dashboard_frame = tk.Frame(self.main_tab, bg=BG_COLOR)
+        dashboard_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=20, pady=20)
+        tk.Label(dashboard_frame, text="Dashboard", bg=BG_COLOR, font=("Helvetica", 14, "bold")).pack(pady=10)
+        self.preview_text = tk.Text(dashboard_frame, wrap=tk.WORD, bg="white", fg="black")
         self.preview_text.pack(fill=tk.BOTH, expand=True)
-
-    def create_dashboard_tab(self):
-        dashboard_frame = tk.Frame(self.dashboard_tab, bg=BG_COLOR)
-        dashboard_frame.pack(fill=tk.BOTH, expand=True, padx=20, pady=20)
-        tk.Label(dashboard_frame, text="Dashboard", bg=BG_COLOR, font=("Helvetica", 16, "bold")).pack(pady=10)
-        self.dashboard_text = tk.Text(dashboard_frame, wrap=tk.WORD, bg="white", fg="black")
-        self.dashboard_text.pack(fill=tk.BOTH, expand=True)
-        tk.Button(dashboard_frame, text="Refresh Dashboard", bg=BUTTON_BG, fg="white",
-                  command=self.refresh_dashboard).pack(pady=10)
 
     # ------------------ Helper Methods ---------------------
     def load_csv(self):
@@ -199,9 +169,7 @@ class MainApp(tk.Tk):
             try:
                 self.df = helpers.load_skeletal_data(file_path)
                 self.df["ImageFlag"] = self.df["ImageFlag"].ffill()  # Ensure forward fill
-                messagebox.showinfo("File Loaded", "CSV file loaded successfully.")
                 self.preview_text.insert(tk.END, f"Loaded CSV: {file_path}\n")
-                self.dashboard_text.insert(tk.END, f"Loaded CSV: {file_path}\n")
                 unique_ids = sorted(self.df["ID"].unique().tolist())
                 self.id_combobox["values"] = unique_ids
                 if unique_ids:
@@ -216,7 +184,6 @@ class MainApp(tk.Tk):
         selected_id = self.person_id_var.get()
         subset = self.df[self.df["ID"].astype(str).str.strip() == str(selected_id)]
         unique_flags = sorted(subset["ImageFlag"].astype(str).str.strip().unique().tolist())
-        # Do not append "All" here; we will allow the user to choose "All" explicitly in the frame mode dropdown.
         self.image_flag_combobox["values"] = unique_flags
         if unique_flags:
             self.image_flag_var.set(unique_flags[0])
@@ -257,9 +224,8 @@ class MainApp(tk.Tk):
                 for i, frame in enumerate(frames):
                     coord_data = frame.iloc[:, 2:]
                     helpers.visualize_skeleton(coord_data, title="3D Skeleton Plot", section=i + 1)
-                    # Optionally, pause between frames:
                     plt.pause(1)
-            self.dashboard_text.insert(tk.END, "Skeleton visualization displayed.\n")
+            self.preview_text.insert(tk.END, "Skeleton visualization displayed.\n")
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -270,8 +236,7 @@ class MainApp(tk.Tk):
                 frame = self.get_selected_frame()
                 parts = helpers.assign_skeletal_parts(frame)
                 height_m = helpers.calculate_height(parts['head'], parts['left_ankle'], parts['right_ankle'])
-                height_in = helpers.calculate_height(parts['head'], parts['left_ankle'], parts['right_ankle'],
-                                                     convert_to_inches=True)
+                height_in = helpers.calculate_height(parts['head'], parts['left_ankle'], parts['right_ankle'], convert_to_inches=True)
                 result = f"Calculated Height for Person {self.person_id_var.get()}, Image {self.image_flag_var.get()}:\n{height_m:.2f} m\n{height_in:.2f} in\n"
             else:
                 frames = self.get_all_frames()
@@ -282,8 +247,7 @@ class MainApp(tk.Tk):
                     heights.append(height_m)
                 avg_height = np.mean(heights)
                 result = f"Average Height for Person {self.person_id_var.get()} (across {len(heights)} frames):\n{avg_height:.2f} m\n"
-            messagebox.showinfo("Height Calculation", result)
-            self.dashboard_text.insert(tk.END, result)
+            self.preview_text.insert(tk.END, result)
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -304,8 +268,7 @@ class MainApp(tk.Tk):
                     girths.append(girth)
                 avg_girth = np.mean(girths)
                 result = f"Average Girth for Person {self.person_id_var.get()} (across {len(girths)} frames): {avg_girth:.2f} m\n"
-            messagebox.showinfo("Girth Calculation", result)
-            self.dashboard_text.insert(tk.END, result)
+            self.preview_text.insert(tk.END, result)
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -316,18 +279,14 @@ class MainApp(tk.Tk):
                 frame = self.get_selected_frame()
             else:
                 frames = self.get_all_frames()
-                # Use the first frame as representative; or average results if desired.
                 frame = frames[0]
             parts = helpers.assign_skeletal_parts(frame)
-            height_in = helpers.calculate_height(parts['head'], parts['left_ankle'], parts['right_ankle'],
-                                                 convert_to_inches=True)
+            height_in = helpers.calculate_height(parts['head'], parts['left_ankle'], parts['right_ankle'], convert_to_inches=True)
             girth = helpers.calculate_girth(parts['left_shoulder'], parts['right_shoulder'])
             ref_heights = np.array([58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76])
-            ref_weights = np.array(
-                [105, 109, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 162, 166, 171, 176, 180])
+            ref_weights = np.array([105, 109, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 162, 166, 171, 176, 180])
             interpolated_weight = helpers.interpolate_weight(height_in, ref_heights, ref_weights)
-
-            # Instead of a constant girth, simulate variation from all frames:
+            # Get girth measurements across all frames for variability
             frames_all = helpers.get_all_frames_by_id(self.df, self.person_id_var.get())
             girth_values = []
             for frm in frames_all:
@@ -345,7 +304,6 @@ class MainApp(tk.Tk):
                 std_girth = 0.01 * girth
             if std_girth == 0:
                 std_girth = 0.01 * mean_girth
-
             # Simulate variation in girth for training data
             girth_variation = np.random.uniform(mean_girth - std_girth, mean_girth + std_girth, size=ref_heights.shape)
             X_train = np.column_stack((ref_heights, girth_variation))
@@ -357,21 +315,18 @@ class MainApp(tk.Tk):
             if reg_model_choice == "all":
                 for model_type in ["linear", "polynomial", "bayesian"]:
                     degree = 2 if model_type == "polynomial" else 1
-                    model, coeffs = helpers.fit_weight_regression(X_train, y_train, regression_type=model_type,
-                                                                  degree=degree)
+                    model, coeffs = helpers.fit_weight_regression(X_train, y_train, regression_type=model_type, degree=degree)
                     regression_models[model_type] = (model, coeffs)
                     regression_results += f"{model_type.capitalize()} Coefficients: {coeffs}\n"
             else:
                 degree = 2 if reg_model_choice == "polynomial" else 1
-                model, coeffs = helpers.fit_weight_regression(X_train, y_train, regression_type=reg_model_choice,
-                                                              degree=degree)
+                model, coeffs = helpers.fit_weight_regression(X_train, y_train, regression_type=reg_model_choice, degree=degree)
                 regression_models[reg_model_choice] = (model, coeffs)
                 regression_results = f"{reg_model_choice.capitalize()} Coefficients: {coeffs}\n"
 
             result = (f"Estimated Weight for Person {self.person_id_var.get()}, Image {self.image_flag_var.get()}:\n"
                       f"Interpolated Weight: {interpolated_weight:.2f} lbs\n" + regression_results)
-            messagebox.showinfo("Weight Estimation", result)
-            self.dashboard_text.insert(tk.END, result)
+            self.preview_text.insert(tk.END, result)
 
             # Plot regression results:
             if reg_model_choice == "all":
@@ -390,7 +345,6 @@ class MainApp(tk.Tk):
                     ax.plot_surface(H, G, W, color=colors[model_type], alpha=0.4)
                     patch = mpatches.Patch(color=colors[model_type], label=model_type.capitalize())
                     proxy_handles.append(patch)
-                # Add proxy for original data
                 proxy_handles.append(mpatches.Patch(color='b', label='Original Data'))
                 ax.set_xlabel('Height')
                 ax.set_ylabel('Girth')
@@ -400,34 +354,24 @@ class MainApp(tk.Tk):
                 plt.show()
             else:
                 model = list(regression_models.values())[0][0]
-                helpers.plot_regression_results(X_train, y_train, model,
-                                                title=f"{reg_model_choice.capitalize()} Regression Results")
+                helpers.plot_regression_results(X_train, y_train, model, title=f"{reg_model_choice.capitalize()} Regression Results")
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
     def evaluate_data_op(self):
-        """
-        Data Evaluation:
-        Depending on the frame mode, either:
-          - Single Frame: Compute and display the height from the selected frame (RMSE not applicable), or
-          - All Frames: Compute the height for each available image frame block (each 20 rows) for the selected person,
-                         then calculate the RMSE of the heights across all frames.
-        """
         try:
             if self.df is None:
                 raise ValueError("Please load a CSV file first.")
             selected_id = self.person_id_var.get()
             frame_mode = self.frame_mode_var.get()
-
             if frame_mode == "Single Frame":
-                # Get the single selected frame.
                 frame = self.get_selected_frame()
                 parts = helpers.assign_skeletal_parts(frame)
                 height_m = helpers.calculate_height(parts['head'], parts['left_ankle'], parts['right_ankle'])
-                result = (f"Single Frame Height for Person {selected_id} (Image {self.image_flag_var.get()}):\n"
+                result = (f"Single Frame Height for Person {selected_id} :\n"
                           f"Height: {height_m:.2f} m\n"
                           "Note: RMSE cannot be computed on a single frame.")
-            else:  # All Frames mode
+            else:
                 frames = helpers.get_all_frames_by_id(self.df, selected_id)
                 if not frames:
                     raise ValueError("No valid image frames found for this person.")
@@ -445,8 +389,7 @@ class MainApp(tk.Tk):
                 result = (f"Data Evaluation (RMSE) for Person {selected_id} across all frames:\n"
                           f"RMSE of Heights: {rmse_value:.4f} m\n"
                           f"Frame Heights: {heights}\n")
-            messagebox.showinfo("Data Evaluation", result)
-            self.dashboard_text.insert(tk.END, result)
+            self.preview_text.insert(tk.END, result)
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -475,7 +418,6 @@ class MainApp(tk.Tk):
 
     def export_data_op(self):
         try:
-            # Ask the user where to save the PDF file
             pdf_file = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF files", "*.pdf")])
             if not pdf_file:
                 return
@@ -484,43 +426,39 @@ class MainApp(tk.Tk):
             from reportlab.pdfgen import canvas
             from reportlab.lib.utils import ImageReader
 
-            # Create a new canvas with letter size
             c = canvas.Canvas(pdf_file, pagesize=letter)
             page_width, page_height = letter
 
-            # Write dashboard text into the PDF on the first page
-            dashboard_text = self.dashboard_text.get("1.0", tk.END)
+            # Write dashboard text from the preview_text widget onto the first PDF page
+            dashboard_text = self.preview_text.get("1.0", tk.END)
             c.setFont("Helvetica", 10)
             text_obj = c.beginText(40, page_height - 40)
             for line in dashboard_text.splitlines():
                 text_obj.textLine(line)
             c.drawText(text_obj)
-            c.showPage()  # Finish the first page
+            c.showPage()
 
-            # List of plot image files to include (make sure your plotting functions save to these files)
+            # List of plot image files to include (ensure your plotting functions save images to these files)
             plot_files = ["regression_plot.png", "synthetic_plot.png", "distribution_plot.png"]
             for pf in plot_files:
                 try:
-                    # Check if the file exists
                     import os
                     if os.path.exists(pf):
-                        # Create an image reader object and embed the image
                         img = ImageReader(pf)
-                        # Draw the image scaled to fit within the page margins
                         c.drawImage(img, 40, 200, width=page_width - 80, preserveAspectRatio=True, mask='auto')
-                        c.showPage()  # Create a new page after each image
+                        c.showPage()
                 except Exception as img_e:
                     print(f"Could not add image {pf}: {img_e}")
 
             c.save()
-            messagebox.showinfo("Export Data", f"Data exported to {pdf_file}")
-            self.dashboard_text.insert(tk.END, f"Data exported to {pdf_file}\n")
+            export_result = f"Data exported to {pdf_file}\n"
+            self.preview_text.insert(tk.END, export_result)
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
     def refresh_dashboard(self):
-        self.dashboard_text.delete("1.0", tk.END)
-        self.dashboard_text.insert(tk.END, "Dashboard refreshed with latest outputs.\n")
+        self.preview_text.delete("1.0", tk.END)
+        self.preview_text.insert(tk.END, "Dashboard refreshed with latest outputs.\n")
 
     def create_menu(self):
         menubar = tk.Menu(self)
@@ -531,10 +469,7 @@ class MainApp(tk.Tk):
         menubar.add_cascade(label="File", menu=filemenu)
         self.config(menu=menubar)
 
-
 if __name__ == '__main__':
     app = MainApp()
     app.create_menu()
     app.mainloop()
-
-
