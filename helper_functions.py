@@ -38,53 +38,67 @@ def load_skeletal_data(csv_file):
     """
     Load the CSV file into a pandas DataFrame and ensure the coordinate columns
     are numeric (float).
-    
+
     Expected columns in the CSV:
       ImageFlag, PersonID, x3D (m), y3D (m), z3D (m)
-    
+
     If your actual CSV has different column names, adjust the renaming step.
-    
+
     Parameters:
         csv_file (str): Path to the CSV file.
-        
+
     Returns:
         pd.DataFrame: DataFrame with columns ['ImageFlag','PersonID','x3D (m)','y3D (m)','z3D (m)'].
     """
     # Read CSV with a header row. If your file has no header, set header=None and rename manually.
     df = pd.read_csv(csv_file)
-    
+
     # Optional: If your CSV columns differ, rename them accordingly:
     # e.g., df.columns = ["ImageFlag", "PersonID", "x3D (m)", "y3D (m)", "z3D (m)"]
     # If your file already has the correct header, you can skip or adjust this step.
-    
-    expected_cols = ["ImageFlag", "PersonID", "x3D (m)", "y3D (m)", "z3D (m)"]
+
+    expected_cols = ["ImageFlag", "ID", "x3D (m)", "y3D (m)", "z3D (m)"]
     if list(df.columns[:5]) != expected_cols:
         df.columns = expected_cols
-    
+
     # Convert coordinate columns to numeric (float)
     for col in ["x3D (m)", "y3D (m)", "z3D (m)"]:
         df[col] = pd.to_numeric(df[col], errors='coerce')
-    
+
     # Check for any NaN values that might indicate non-numeric data
     if df[["x3D (m)", "y3D (m)", "z3D (m)"]].isnull().any().any():
         raise ValueError("Some x3D (m), y3D (m), or z3D (m) values could not be converted to float.")
-    
+
     return df
 
-def get_image_data(df, image_flag):
+
+def get_image_frame_by_id(df, person_id, image_flag):
     """
-    Extract rows corresponding to a specific image (ImageFlag).
-    
+    Extract rows corresponding to a specific person (by their ID) and a specific image (by ImageFlag).
+
+    This function assumes that the CSV is arranged so that each image frame appears as a group of consecutive rows
+    with the same ImageFlag. It returns all rows corresponding to that image.
+
     Parameters:
-        df (pd.DataFrame): The full dataset with columns ['ImageFlag','PersonID','x3D (m)','y3D (m)','z3D (m)'].
+        df (pd.DataFrame): The full dataset with columns
+                           ['ImageFlag', 'ID', 'x3D (m)', 'y3D (m)', 'z3D (m)', ...].
+        person_id (str or int): The ID of the person.
         image_flag (str): The unique identifier of the image (e.g., '000-14').
-        
+
     Returns:
-        pd.DataFrame: Subset of rows from df where ImageFlag == image_flag.
+        pd.DataFrame: Subset of rows from df where both 'ID' equals person_id and 'ImageFlag' equals image_flag.
     """
-    subset = df[df["ImageFlag"] == image_flag].copy()
-    # Sort by PersonID or any other logic you need:
-    # subset.sort_values(by="PersonID", inplace=True)
+    df_copy = df.copy()
+
+    # Forward fill the ImageFlag column; this makes sure that missing values are filled
+    df_copy["ImageFlag"] = df_copy["ImageFlag"].ffill()
+    # Use string conversion and stripping for consistent comparison
+    subset = df_copy[(df_copy["ID"].astype(str).str.strip() == str(person_id)) &
+                     (df_copy["ImageFlag"].astype(str).str.strip() == str(image_flag))].copy()
+    print(subset)
+    if subset.shape[0] != 20:
+        raise ValueError(
+            f"Expected 20 rows for image frame '{image_flag}' of person {person_id}, but got {subset.shape[0]}")
     return subset
 
 # Skeletal Assignment
@@ -92,10 +106,10 @@ def get_image_data(df, image_flag):
 def assign_skeletal_parts(frame_data):
     """
     Given data for one frame (e.g., 20 joints), assign key skeletal parts based on predetermined indices.
-    
+
     Parameters:
         frame_data (pd.DataFrame or np.ndarray): Data for one frame.
-    
+
     Returns:
         dict: Keys are 'head', 'right_shoulder', 'left_shoulder', 'right_ankle', 'left_ankle'
               with their (x, y, z) coordinates as numpy arrays.
@@ -108,7 +122,7 @@ def assign_skeletal_parts(frame_data):
         data = np.array(frame_data, dtype=float)
 
     parts = {
-        'head': data[3, 0:3],            # Head at index 3 
+        'head': data[3, 0:3],            # Head at index 3
         'right_shoulder': data[4, 0:3],    # Right Shoulder at index 4
         'left_shoulder': data[8, 0:3],     # Left Shoulder at index 8
         'right_ankle': data[14, 0:3],      # Right Ankle at index 14
@@ -120,7 +134,7 @@ def visualize_skeleton(frame_df, title="3D Skeleton Plot with Depth Visualizatio
     """
     Create a 3D scatter plot from the 'x3D (m)', 'y3D (m)', 'z3D (m)' columns of the given DataFrame,
     and connect the points with lines to form a skeleton.
-    
+
     Parameters:
         frame_df (pd.DataFrame): Must contain 'x3D (m)', 'y3D (m)', 'z3D (m)' columns.
         title (str): Title for the plot.
@@ -130,35 +144,35 @@ def visualize_skeleton(frame_df, title="3D Skeleton Plot with Depth Visualizatio
     x = frame_df["x3D (m)"].to_numpy(dtype=float)
     y = frame_df["y3D (m)"].to_numpy(dtype=float)
     z = frame_df["z3D (m)"].to_numpy(dtype=float)
-    
+
     # Create a new figure and add a 3D subplot
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    
+
     # Create a scatter plot with color indicating depth (z-coordinate)
     sc = ax.scatter(x, y, z, c=z, cmap='jet', s=50)
     plt.colorbar(sc, label='Depth (z3D (m))')
-    
+
     # Set axis labels and plot title
     ax.set_xlabel('X-axis')
     ax.set_ylabel('Y-axis')
     ax.set_zlabel('Z-axis')
     ax.set_title(f'{title} - Section {section}')
-    
+
     # Set axis limits to match a 1280x960 frame (adjust these limits as needed)
     ax.set_xlim([-0.5, 0.5])
     ax.set_ylim([-1, 1])
     ax.set_zlim([np.min(z) - 0.5, np.max(z) + 0.5])
-    
-    # Set equal aspect ratio 
+
+    # Set equal aspect ratio
     ax.set_box_aspect((1, 1, 1))
-    
+
     # Enable grid lines and default 3D view
     ax.grid(True)
-    
+
     # Display the plot before drawing connections (hold on)
     plt.pause(0.1)
-    
+
     connections = [
         (0, 1), (1, 2), (2, 3),         # Spine and head
         (2, 4), (4, 5), (5, 6), (6, 7),   # Right arm
@@ -166,11 +180,11 @@ def visualize_skeleton(frame_df, title="3D Skeleton Plot with Depth Visualizatio
         (0, 12), (12, 13), (13, 14), (14, 15),  # Right leg
         (0, 16), (16, 17), (17, 18), (18, 19)   # Left leg
     ]
-    
+
     # Connect the joints to form the skeleton
     for (i, j) in connections:
         ax.plot([x[i], x[j]], [y[i], y[j]], [z[i], z[j]], 'k-', linewidth=2)
-    
+
     # Enhance Z-axis visualization: Set the label and invert Z-axis if needed
     ax.set_zlabel('Depth (Z-axis)')
     ax.invert_zaxis()  # Invert Z-axis to mimic MATLAB's 'set(gca, ''ZDir'', ''reverse'')'
@@ -181,15 +195,15 @@ def visualize_skeleton(frame_df, title="3D Skeleton Plot with Depth Visualizatio
 
 def calculate_height(head, left_ankle, right_ankle, convert_to_inches=False):
     """
-    Calculate the height as the Euclidean distance between the head and the midpoint 
+    Calculate the height as the Euclidean distance between the head and the midpoint
     of the left and right ankles.
-    
+
     Parameters:
         head (np.array): (x, y, z) coordinate of the head.
         left_ankle (np.array): (x, y, z) coordinate of the left ankle.
         right_ankle (np.array): (x, y, z) coordinate of the right ankle.
         convert_to_inches (bool): If True, convert the height from meters to inches.
-    
+
     Returns:
         float: Calculated height.
     """
@@ -197,20 +211,20 @@ def calculate_height(head, left_ankle, right_ankle, convert_to_inches=False):
     ankle_midpoint = (left_ankle + right_ankle) / 2.0
     # Euclidean distance from head to ankle midpoint
     height = np.linalg.norm(head - ankle_midpoint)
-    
+
     if convert_to_inches:
         height *= 39.3701  # Conversion factor from meters to inches
-    
+
     return height
 
 def calculate_girth(left_shoulder, right_shoulder):
     """
     Calculate the girth above the waist as the Euclidean distance between the left and right shoulders.
-    
+
     Parameters:
         left_shoulder (np.array): (x, y, z) coordinate of the left shoulder.
         right_shoulder (np.array): (x, y, z) coordinate of the right shoulder.
-    
+
     Returns:
         float: Calculated girth.
     """
@@ -221,12 +235,12 @@ def calculate_girth(left_shoulder, right_shoulder):
 def interpolate_weight(height, ref_heights, ref_weights):
     """
     Interpolate or extrapolate the weight for a given height using a reference table.
-    
+
     Parameters:
         height (float or np.array): Height(s) for which weight is estimated.
         ref_heights (np.array): Array of reference heights.
         ref_weights (np.array): Array of corresponding reference weights.
-    
+
     Returns:
         float or np.array: Interpolated weight value(s).
     """
@@ -235,13 +249,13 @@ def interpolate_weight(height, ref_heights, ref_weights):
 def fit_weight_regression(X, y, regression_type='linear', degree=1):
     """
     Fit a regression model to predict weight from height and girth measurements.
-    
+
     Parameters:
         X (np.array): Design matrix with columns representing features (e.g., height and girth).
         y (np.array): Target variable (weight).
         regression_type (str): 'linear' for linear regression or 'polynomial' for polynomial regression.
         degree (int): Degree for polynomial regression (ignored for linear regression).
-    
+
     Returns:
         model: The trained regression model.
         coeffs (np.array): Regression coefficients (first element is intercept).
@@ -260,7 +274,7 @@ def fit_weight_regression(X, y, regression_type='linear', degree=1):
         coeffs = np.concatenate(([intercept], coef))
     else:
         raise ValueError("Unsupported regression type. Choose 'linear' or 'polynomial'.")
-    
+
     return model, coeffs
 
 # Data Evaluation
@@ -268,12 +282,12 @@ def fit_weight_regression(X, y, regression_type='linear', degree=1):
 def calculate_rmse(measurements):
     """
     Calculate the Root Mean Square Error (RMSE) of measurements relative to their mean.
-    
+
     This can be used to assess consistency (e.g., height measurements for the same person).
-    
+
     Parameters:
         measurements (np.array): Array of measurement values.
-    
+
     Returns:
         float: RMSE value.
     """
@@ -286,14 +300,14 @@ def calculate_rmse(measurements):
 def synthesize_data(model, num_samples, height_range, girth_range, noise_std=1.0):
     """
     Generate synthetic data based on the fitted regression model.
-    
+
     Parameters:
         model: Regression model with a predict() method.
         num_samples (int): Number of synthetic samples to generate.
         height_range (tuple): (min_height, max_height) for synthetic height values.
         girth_range (tuple): (min_girth, max_girth) for synthetic girth values.
         noise_std (float): Standard deviation of Gaussian noise to add.
-    
+
     Returns:
         X_synthetic (np.array): Synthetic design matrix (height, girth).
         weight_synthetic (np.array): Predicted weight values with added noise.
@@ -309,7 +323,7 @@ def synthesize_data(model, num_samples, height_range, girth_range, noise_std=1.0
 def plot_regression_results(X, y, model, title='Regression Results'):
     """
     Plot original data points and the regression plane.
-    
+
     Parameters:
         X (np.array): Design matrix with height and girth.
         y (np.array): Actual weight values.
@@ -318,17 +332,17 @@ def plot_regression_results(X, y, model, title='Regression Results'):
     """
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
-    
+
     # Plot the original data as a scatter plot
     ax.scatter(X[:, 0], X[:, 1], y, c='b', label='Original Data', s=50)
-    
+
     # Create a grid for the regression plane
     height_grid = np.linspace(X[:, 0].min(), X[:, 0].max(), 20)
     girth_grid = np.linspace(X[:, 1].min(), X[:, 1].max(), 20)
     H, G = np.meshgrid(height_grid, girth_grid)
     grid_points = np.column_stack((H.ravel(), G.ravel()))
     W = model.predict(grid_points).reshape(H.shape)
-    
+
     # Plot the regression surface
     ax.plot_surface(H, G, W, color='r', alpha=0.5)
     ax.set_xlabel('Height')
@@ -341,7 +355,7 @@ def plot_regression_results(X, y, model, title='Regression Results'):
 def plot_synthetic_vs_real(X_real, y_real, X_synth, y_synth):
     """
     Plot a 3D scatter plot comparing real and synthetic data.
-    
+
     Parameters:
         X_real (np.array): Real design matrix with height and girth.
         y_real (np.array): Real weight values.
@@ -362,7 +376,7 @@ def plot_synthetic_vs_real(X_real, y_real, X_synth, y_synth):
 def plot_weight_distribution(weights):
     """
     Plot the histogram and overlay a normal distribution curve for weight data.
-    
+
     Parameters:
         weights (np.array): Array of weight values.
     """
