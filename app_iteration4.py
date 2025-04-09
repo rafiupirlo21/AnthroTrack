@@ -35,6 +35,8 @@ from tkinter import ttk, messagebox, filedialog
 import webbrowser
 import pandas as pd
 import numpy as np
+from matplotlib import pyplot as plt
+
 import helper_functions as helpers  # Import our helper functions
 
 # Define pink-themed colors
@@ -151,7 +153,7 @@ class MainApp(tk.Tk):
                                                                                                              sticky=tk.W)
         self.regression_model_combobox = ttk.Combobox(selection_frame, textvariable=self.regression_model_var,
                                                       state="readonly", width=15)
-        self.regression_model_combobox["values"] = ["Linear", "Polynomial", "Ridge", "All"]
+        self.regression_model_combobox["values"] = ["Linear", "Polynomial", "Bayesian", "All"]
         self.regression_model_combobox.grid(row=1, column=3, padx=5, pady=5)
 
         # Left frame for operation buttons
@@ -311,94 +313,95 @@ class MainApp(tk.Tk):
         try:
             frame_mode = self.frame_mode_var.get()
             if frame_mode == "Single Frame":
-                frames = [self.get_selected_frame()]
+                frame = self.get_selected_frame()
             else:
                 frames = self.get_all_frames()
+                # Use the first frame as representative; or average results if desired.
+                frame = frames[0]
+            parts = helpers.assign_skeletal_parts(frame)
+            height_in = helpers.calculate_height(parts['head'], parts['left_ankle'], parts['right_ankle'],
+                                                 convert_to_inches=True)
+            girth = helpers.calculate_girth(parts['left_shoulder'], parts['right_shoulder'])
+            ref_heights = np.array([58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76])
+            ref_weights = np.array(
+                [105, 109, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 162, 166, 171, 176, 180])
+            interpolated_weight = helpers.interpolate_weight(height_in, ref_heights, ref_weights)
 
-            # For each frame, compute weight estimate (we’ll average the estimates)
-            weight_estimates = []
+            # Instead of a constant girth, simulate variation from all frames:
+            frames_all = helpers.get_all_frames_by_id(self.df, self.person_id_var.get())
+            girth_values = []
+            for frm in frames_all:
+                try:
+                    p = helpers.assign_skeletal_parts(frm)
+                    g_val = helpers.calculate_girth(p['left_shoulder'], p['right_shoulder'])
+                    girth_values.append(g_val)
+                except Exception as e:
+                    print(f"Skipping frame in girth computation: {e}")
+            if girth_values:
+                mean_girth = np.mean(girth_values)
+                std_girth = np.std(girth_values)
+            else:
+                mean_girth = girth
+                std_girth = 0.01 * girth
+            if std_girth == 0:
+                std_girth = 0.01 * mean_girth
+
+            # Simulate variation in girth for training data
+            girth_variation = np.random.uniform(mean_girth - std_girth, mean_girth + std_girth, size=ref_heights.shape)
+            X_train = np.column_stack((ref_heights, girth_variation))
+            y_train = ref_weights
+
+            reg_model_choice = self.regression_model_var.get().lower()  # 'linear', 'polynomial', 'bayesian', or 'all'
+            regression_models = {}
             regression_results = ""
-            for frame in frames:
-                parts = helpers.assign_skeletal_parts(frame)
-                height_in = helpers.calculate_height(parts['head'], parts['left_ankle'], parts['right_ankle'],
-                                                     convert_to_inches=True)
-                girth = helpers.calculate_girth(parts['left_shoulder'], parts['right_shoulder'])
-                # Reference table for BMI class 22 (example values)
-                ref_heights = np.array([58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76])
-                ref_weights = np.array(
-                    [105, 109, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 162, 166, 171, 176, 180])
-                interpolated_weight = helpers.interpolate_weight(height_in, ref_heights, ref_weights)
-
-                # Prepare training data for regression: use a constant girth value (from the frame) for all ref heights.
-                X_train = np.column_stack((ref_heights, np.full_like(ref_heights, girth)))
-                y_train = ref_weights
-
-                reg_model_choice = self.regression_model_var.get().lower()  # "linear", "polynomial", "ridge", or "all"
-                regression_models = {}
-                if reg_model_choice == "all":
-                    for model_type in ["linear", "polynomial", "ridge"]:
-                        degree = 2 if model_type == "polynomial" else 1
-                        model, coeffs = helpers.fit_weight_regression(X_train, y_train, regression_type=model_type,
-                                                                      degree=degree)
-                        regression_models[model_type] = (model, coeffs)
-                    # For each model type, display coefficients (for demonstration, we use the last frame's coefficients).
-                    for m_type, (_, coeffs) in regression_models.items():
-                        regression_results += f"{m_type.capitalize()} Coefficients: {coeffs}\n"
-                    # For simplicity, take the weight from the linear model as the frame estimate
-                    weight_est = helpers.fit_weight_regression(X_train, y_train, regression_type="linear")[0].predict(
-                        np.array([[height_in, girth]]))[0]
-                else:
-                    degree = 2 if reg_model_choice == "polynomial" else 1
-                    model, coeffs = helpers.fit_weight_regression(X_train, y_train, regression_type=reg_model_choice,
+            if reg_model_choice == "all":
+                for model_type in ["linear", "polynomial", "bayesian"]:
+                    degree = 2 if model_type == "polynomial" else 1
+                    model, coeffs = helpers.fit_weight_regression(X_train, y_train, regression_type=model_type,
                                                                   degree=degree)
-                    regression_results = f"{reg_model_choice.capitalize()} Coefficients: {coeffs}\n"
-                    weight_est = model.predict(np.array([[height_in, girth]]))[0]
+                    regression_models[model_type] = (model, coeffs)
+                    regression_results += f"{model_type.capitalize()} Coefficients: {coeffs}\n"
+            else:
+                degree = 2 if reg_model_choice == "polynomial" else 1
+                model, coeffs = helpers.fit_weight_regression(X_train, y_train, regression_type=reg_model_choice,
+                                                              degree=degree)
+                regression_models[reg_model_choice] = (model, coeffs)
+                regression_results = f"{reg_model_choice.capitalize()} Coefficients: {coeffs}\n"
 
-                # Combine interpolation and regression: For demonstration, average the two estimates.
-                combined_estimate = (interpolated_weight + weight_est) / 2.0
-                weight_estimates.append(combined_estimate)
-
-            avg_weight = np.mean(weight_estimates)
-            result = (f"Estimated Weight for Person {self.person_id_var.get()}\n"
-                      f"Average Estimated Weight (across {len(weight_estimates)} frames): {avg_weight:.2f} lbs\n"
-                      + regression_results)
+            result = (f"Estimated Weight for Person {self.person_id_var.get()}, Image {self.image_flag_var.get()}:\n"
+                      f"Interpolated Weight: {interpolated_weight:.2f} lbs\n" + regression_results)
             messagebox.showinfo("Weight Estimation", result)
             self.dashboard_text.insert(tk.END, result)
 
-            # Plot regression results for the single frame case (if only one frame, or for the first frame)
-            if frame_mode == "Single Frame":
-                reg_model_choice = self.regression_model_var.get().lower()
-                degree = 2 if reg_model_choice == "polynomial" else 1
-                model, _ = helpers.fit_weight_regression(X_train, y_train, regression_type=reg_model_choice,
-                                                         degree=degree)
+            # Plot regression results:
+            if reg_model_choice == "all":
+                import matplotlib.patches as mpatches
+                fig = plt.figure()
+                ax = fig.add_subplot(111, projection='3d')
+                ax.scatter(X_train[:, 0], X_train[:, 1], y_train, c='b', label='Original Data', s=50)
+                height_grid = np.linspace(X_train[:, 0].min(), X_train[:, 0].max(), 20)
+                girth_grid = np.linspace(X_train[:, 1].min(), X_train[:, 1].max(), 20)
+                H, G = np.meshgrid(height_grid, girth_grid)
+                grid_points = np.column_stack((H.ravel(), G.ravel()))
+                colors = {'linear': 'r', 'polynomial': 'g', 'bayesian': 'c'}
+                proxy_handles = []
+                for model_type, (model, _) in regression_models.items():
+                    W = model.predict(grid_points).reshape(H.shape)
+                    ax.plot_surface(H, G, W, color=colors[model_type], alpha=0.4)
+                    patch = mpatches.Patch(color=colors[model_type], label=model_type.capitalize())
+                    proxy_handles.append(patch)
+                # Add proxy for original data
+                proxy_handles.append(mpatches.Patch(color='b', label='Original Data'))
+                ax.set_xlabel('Height')
+                ax.set_ylabel('Girth')
+                ax.set_zlabel('Weight')
+                ax.set_title("Regression Surfaces: Linear, Polynomial, Bayesian")
+                ax.legend(handles=proxy_handles, loc='best')
+                plt.show()
+            else:
+                model = list(regression_models.values())[0][0]
                 helpers.plot_regression_results(X_train, y_train, model,
                                                 title=f"{reg_model_choice.capitalize()} Regression Results")
-            else:
-                # For "All Frames", overlay all regression surfaces from the last processed frame as an example.
-                if reg_model_choice == "all":
-                    # Create a 3D plot and overlay each model's regression surface.
-                    fig = plt.figure()
-                    ax = fig.add_subplot(111, projection='3d')
-                    ax.scatter(X_train[:, 0], X_train[:, 1], y_train, c='b', label='Reference Data', s=50)
-                    height_grid = np.linspace(X_train[:, 0].min(), X_train[:, 0].max(), 20)
-                    girth_grid = np.linspace(X_train[:, 1].min(), X_train[:, 1].max(), 20)
-                    H, G = np.meshgrid(height_grid, girth_grid)
-                    grid_points = np.column_stack((H.ravel(), G.ravel()))
-                    colors = {'linear': 'r', 'polynomial': 'g', 'ridge': 'm'}
-                    for m_type, (model, _) in regression_models.items():
-                        W = model.predict(grid_points).reshape(H.shape)
-                        ax.plot_surface(H, G, W, color=colors[m_type], alpha=0.4)
-                    ax.set_xlabel('Height')
-                    ax.set_ylabel('Girth')
-                    ax.set_zlabel('Weight')
-                    ax.set_title("Regression Surfaces for All Models")
-                    plt.show()
-                else:
-                    model, _ = helpers.fit_weight_regression(X_train, y_train, regression_type=reg_model_choice,
-                                                             degree=degree)
-                    helpers.plot_regression_results(X_train, y_train, model,
-                                                    title=f"{reg_model_choice.capitalize()} Regression Results")
-
         except Exception as e:
             messagebox.showerror("Error", str(e))
 

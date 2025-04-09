@@ -26,14 +26,12 @@ Author: Md Rafiu Hossain, Khadiza Ahsan
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D  # Required for 3D plotting
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import make_pipeline
 from scipy.stats import norm
 from sklearn.linear_model import BayesianRidge
-from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
+
 
 # Data Loading and Skeletal Assignment
 
@@ -289,8 +287,8 @@ def fit_weight_regression(X, y, regression_type='linear', degree=1):
     Parameters:
         X (np.array): Design matrix with columns representing features (e.g., height and girth).
         y (np.array): Target variable (weight).
-        regression_type (str): 'linear', 'polynomial', or 'ridge'.
-        degree (int): Degree for polynomial regression (ignored for linear and ridge regression).
+        regression_type (str): 'linear' for linear regression, 'polynomial' for polynomial regression, or 'bayesian' for Bayesian Ridge regression.
+        degree (int): Degree for polynomial regression (ignored for linear and bayesian regression).
 
     Returns:
         model: The trained regression model.
@@ -308,14 +306,13 @@ def fit_weight_regression(X, y, regression_type='linear', degree=1):
         intercept = linear_reg.intercept_
         coef = linear_reg.coef_
         coeffs = np.concatenate(([intercept], coef))
-    elif regression_type == 'ridge':
-        from sklearn.linear_model import Ridge
-        model = Ridge(alpha=1.0).fit(X, y)
+    elif regression_type == 'bayesian':
+        model = BayesianRidge().fit(X, y)
         intercept = model.intercept_
         coef = model.coef_
         coeffs = np.concatenate(([intercept], coef))
     else:
-        raise ValueError("Unsupported regression type. Choose 'linear', 'polynomial', or 'ridge'.")
+        raise ValueError("Unsupported regression type. Choose 'linear', 'polynomial', or 'bayesian'.")
 
     return model, coeffs
 
@@ -386,7 +383,7 @@ def plot_regression_results(X, y, model, title='Regression Results'):
     W = model.predict(grid_points).reshape(H.shape)
 
     # Plot the regression surface
-    ax.plot_surface(H, G, W, color='r', alpha=0.5)
+    ax.plot_surface(H, G, W, color='r', alpha=0.5, label='Regression Plane')
     ax.set_xlabel('Height')
     ax.set_ylabel('Girth')
     ax.set_zlabel('Weight')
