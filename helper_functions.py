@@ -31,6 +31,9 @@ from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import make_pipeline
 from scipy.stats import norm
+from sklearn.linear_model import BayesianRidge
+from sklearn.gaussian_process import GaussianProcessRegressor
+from sklearn.gaussian_process.kernels import RBF, ConstantKernel as C
 
 # Data Loading and Skeletal Assignment
 
@@ -100,6 +103,39 @@ def get_image_frame_by_id(df, person_id, image_flag):
         raise ValueError(
             f"Expected 20 rows for image frame '{image_flag}' of person {person_id}, but got {subset.shape[0]}")
     return subset
+
+
+def get_all_frames_by_id(df, person_id):
+    """
+    For a given person_id, return a list of DataFrame blocks, each block being
+    a consecutive group of 20 rows from the DataFrame belonging to that person.
+
+    This function does not use the ImageFlag for grouping; it simply groups all
+    rows for the specified person into blocks of 20.
+
+    Parameters:
+        df (pd.DataFrame): The full dataset with columns such as
+            ['ImageFlag', 'ID', 'x3D (m)', 'y3D (m)', 'z3D (m)', ...].
+        person_id (str or int): The person's ID.
+
+    Returns:
+        list of pd.DataFrame: A list where each element is a DataFrame (block) with exactly 20 rows.
+                              Blocks with fewer than 20 rows (e.g. the final block if incomplete) are omitted.
+    """
+    # Filter the DataFrame to only rows for the given person ID.
+    subset = df[df["ID"].astype(str).str.strip() == str(person_id)].copy()
+    # Forward-fill the ImageFlag column in case some rows are missing it.
+    subset["ImageFlag"] = subset["ImageFlag"].ffill()
+    # Reset the index so that rows are consecutively numbered.
+    subset = subset.reset_index(drop=True)
+
+    frames = []
+    block_size = 20
+    for i in range(0, len(subset), block_size):
+        block = subset.iloc[i:i + block_size]
+        if len(block) == block_size:
+            frames.append(block)
+    return frames
 
 # Skeletal Assignment
 
@@ -253,8 +289,8 @@ def fit_weight_regression(X, y, regression_type='linear', degree=1):
     Parameters:
         X (np.array): Design matrix with columns representing features (e.g., height and girth).
         y (np.array): Target variable (weight).
-        regression_type (str): 'linear' for linear regression or 'polynomial' for polynomial regression.
-        degree (int): Degree for polynomial regression (ignored for linear regression).
+        regression_type (str): 'linear', 'polynomial', or 'ridge'.
+        degree (int): Degree for polynomial regression (ignored for linear and ridge regression).
 
     Returns:
         model: The trained regression model.
@@ -272,8 +308,14 @@ def fit_weight_regression(X, y, regression_type='linear', degree=1):
         intercept = linear_reg.intercept_
         coef = linear_reg.coef_
         coeffs = np.concatenate(([intercept], coef))
+    elif regression_type == 'ridge':
+        from sklearn.linear_model import Ridge
+        model = Ridge(alpha=1.0).fit(X, y)
+        intercept = model.intercept_
+        coef = model.coef_
+        coeffs = np.concatenate(([intercept], coef))
     else:
-        raise ValueError("Unsupported regression type. Choose 'linear' or 'polynomial'.")
+        raise ValueError("Unsupported regression type. Choose 'linear', 'polynomial', or 'ridge'.")
 
     return model, coeffs
 
