@@ -26,6 +26,7 @@ Author: Md Rafiu Hossain, Khadiza Ahsan
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+import matplotlib.patches as mpatches
 from sklearn.linear_model import LinearRegression
 from sklearn.preprocessing import PolynomialFeatures
 from sklearn.pipeline import make_pipeline
@@ -94,7 +95,6 @@ def get_image_frame_by_id(df, person_id, image_flag):
     # Use string conversion and stripping for consistent comparison
     subset = df_copy[(df_copy["ID"].astype(str).str.strip() == str(person_id)) &
                      (df_copy["ImageFlag"].astype(str).str.strip() == str(image_flag))].copy()
-    print(subset)
     if subset.shape[0] != 20:
         raise ValueError(
             f"Expected 20 rows for image frame '{image_flag}' of person {person_id}, but got {subset.shape[0]}")
@@ -357,47 +357,95 @@ def synthesize_data(model, num_samples, height_range, girth_range, noise_std=1.0
     weight_synthetic = weight_pred + noise
     return X_synthetic, weight_synthetic
 
-def plot_regression_results(X, y, model, title='Regression Results'):
+plot_counter = {"linear": 0, "polynomial": 0, "bayesian": 0}
+
+def plot_regression_results(X, y, model=None, title='Regression Results',
+                            multiple_models=None, model_label='linear',
+                            person_id=None, frame_mode=None, image_flag=None):
     """
-    Plot original data points and the regression plane.
+    Plot original data points and one or more regression surfaces.
 
     Parameters:
         X (np.array): Design matrix with height and girth.
         y (np.array): Actual weight values.
-        model: Regression model with a predict() method.
+        model: Single regression model with a predict() method (used if multiple_models is None).
         title (str): Title for the plot.
+        multiple_models (dict): Optional dictionary of {model_name: (model, coeffs)} for multiple surfaces.
+        model_label (str): Label to use for naming the file when saving a single model plot.
+        person_id (str): Optional; if provided, included in the title.
+        frame_mode (str): Optional; "Single Frame" or "All Frames", included in the title.
+        image_flag (str): Optional; if provided for Single Frame, included in the title.
+
+    Returns:
+        str: Filename of the saved plot image.
     """
+    # Dynamically update the title if person_id and frame_mode are provided.
+    if person_id is not None and frame_mode is not None:
+        if frame_mode.lower() == "single frame" and image_flag is not None:
+            frame_info = f"Person {person_id}, Flag {image_flag}"
+        else:
+            frame_info = f"Person {person_id}, All Frames"
+        title = f"{title} for {frame_info}"
+
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
 
-    # Plot the original data as a scatter plot
+    # Plot original data points.
     ax.scatter(X[:, 0], X[:, 1], y, c='b', label='Original Data', s=50)
 
-    # Create a grid for the regression plane
+    # Create grid points for surface plotting.
     height_grid = np.linspace(X[:, 0].min(), X[:, 0].max(), 20)
     girth_grid = np.linspace(X[:, 1].min(), X[:, 1].max(), 20)
     H, G = np.meshgrid(height_grid, girth_grid)
     grid_points = np.column_stack((H.ravel(), G.ravel()))
-    W = model.predict(grid_points).reshape(H.shape)
 
-    # Plot the regression surface
-    ax.plot_surface(H, G, W, color='r', alpha=0.5, label='Regression Plane')
+    colors = {'linear': 'r', 'polynomial': 'g', 'bayesian': 'c'}
+    legend_handles = [mpatches.Patch(color='b', label='Original Data')]
+
+    if multiple_models:
+        for name, (m, _) in multiple_models.items():
+            W = m.predict(grid_points).reshape(H.shape)
+            ax.plot_surface(H, G, W, color=colors.get(name, 'gray'), alpha=0.4)
+            legend_handles.append(mpatches.Patch(color=colors.get(name, 'gray'), label=name.capitalize()))
+        filename = f"regression_plot_all_models.png"
+    elif model is not None:
+        W = model.predict(grid_points).reshape(H.shape)
+        ax.plot_surface(H, G, W, color='r', alpha=0.5)
+        legend_handles.append(mpatches.Patch(color='r', label='Regression Surface'))
+        try:
+            plot_counter[model_label] += 1
+        except KeyError:
+            plot_counter[model_label] = 1
+        filename = f"regression_plot_{model_label}_{plot_counter[model_label]}.png"
+    else:
+        return None
+
     ax.set_xlabel('Height')
     ax.set_ylabel('Girth')
     ax.set_zlabel('Weight')
     ax.set_title(title)
-    ax.legend()
+    ax.legend(handles=legend_handles, loc='best')
+
+    plt.savefig(filename)
     plt.show()
 
-def plot_synthetic_vs_real(X_real, y_real, X_synth, y_synth):
+    return filename
+
+
+def plot_synthetic_vs_real(X_real, y_real, X_synth, y_synth, person_id, image_flag):
     """
-    Plot a 3D scatter plot comparing real and synthetic data.
+    Plot a 3D scatter plot comparing real and synthetic data and save the plot with a dynamic filename.
 
     Parameters:
         X_real (np.array): Real design matrix with height and girth.
         y_real (np.array): Real weight values.
         X_synth (np.array): Synthetic design matrix.
         y_synth (np.array): Synthetic weight values.
+        person_id (str): The Person ID.
+        image_flag (str): The ImageFlag (or "All" if applicable).
+
+    Returns:
+        str: The filename of the saved plot.
     """
     fig = plt.figure()
     ax = fig.add_subplot(111, projection='3d')
@@ -408,15 +456,27 @@ def plot_synthetic_vs_real(X_real, y_real, X_synth, y_synth):
     ax.set_zlabel('Weight')
     ax.set_title('Real vs Synthetic Data')
     ax.legend()
-    plt.show()
 
-def plot_weight_distribution(weights):
+    # Build dynamic filename
+    filename = f"Real_vs_Synthetic_Person{person_id}_Flag{image_flag}.png"
+    plt.savefig(filename)
+    plt.show()
+    return filename
+
+
+def plot_weight_distribution(weights, person_id, image_flag):
     """
-    Plot the histogram and overlay a normal distribution curve for weight data.
+    Plot the histogram and overlay a normal distribution curve for weight data, then save the plot with a dynamic filename.
 
     Parameters:
         weights (np.array): Array of weight values.
+        person_id (str): The Person ID.
+        image_flag (str): The ImageFlag (or "All" if applicable).
+
+    Returns:
+        str: The filename of the saved distribution plot.
     """
+    plt.figure()
     plt.hist(weights, bins=20, density=True, alpha=0.6, color='g')
     mu, sigma = np.mean(weights), np.std(weights)
     x_vals = np.linspace(weights.min(), weights.max(), 100)
@@ -424,4 +484,9 @@ def plot_weight_distribution(weights):
     plt.xlabel('Weight')
     plt.ylabel('Probability Density')
     plt.title('Distribution of Weights')
+
+    # Build dynamic filename
+    filename = f"Distribution_of_Weights_Person{person_id}_Flag{image_flag}.png"
+    plt.savefig(filename)
     plt.show()
+    return filename

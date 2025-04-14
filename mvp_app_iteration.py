@@ -35,6 +35,9 @@ import pandas as pd
 import numpy as np
 from matplotlib import pyplot as plt
 import helper_functions as helpers  # Import our helper functions
+from reportlab.lib.pagesizes import letter
+from reportlab.pdfgen import canvas
+from reportlab.lib.utils import ImageReader
 
 # Define pink-themed colors
 BG_COLOR = "#FFC0CB"      # Light pink background
@@ -49,6 +52,7 @@ class MainApp(tk.Tk):
         self.geometry("900x750")
         self.configure(bg=BG_COLOR)
         self.df = None  # Loaded DataFrame
+        self.plot_files = []
 
         # Variables for dropdown selections
         self.person_id_var = tk.StringVar()
@@ -280,81 +284,81 @@ class MainApp(tk.Tk):
             else:
                 frames = self.get_all_frames()
                 frame = frames[0]
+
             parts = helpers.assign_skeletal_parts(frame)
-            height_in = helpers.calculate_height(parts['head'], parts['left_ankle'], parts['right_ankle'], convert_to_inches=True)
-            girth = helpers.calculate_girth(parts['left_shoulder'], parts['right_shoulder'])
+            height_in = helpers.calculate_height(parts['head'], parts['left_ankle'], parts['right_ankle'],
+                                                 convert_to_inches=True)
+            girth = float(helpers.calculate_girth(parts['left_shoulder'], parts['right_shoulder']))
+
+            # Reference data for BMI class 22.
             ref_heights = np.array([58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76])
-            ref_weights = np.array([105, 109, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 162, 166, 171, 176, 180])
+            ref_weights = np.array(
+                [105, 109, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 162, 166, 171, 176, 180])
             interpolated_weight = helpers.interpolate_weight(height_in, ref_heights, ref_weights)
-            # Get girth measurements across all frames for variability
+
+            # Collect girth variation from all frames.
             frames_all = helpers.get_all_frames_by_id(self.df, self.person_id_var.get())
-            girth_values = []
-            for frm in frames_all:
-                try:
-                    p = helpers.assign_skeletal_parts(frm)
-                    g_val = helpers.calculate_girth(p['left_shoulder'], p['right_shoulder'])
-                    girth_values.append(g_val)
-                except Exception as e:
-                    print(f"Skipping frame in girth computation: {e}")
-            if girth_values:
-                mean_girth = np.mean(girth_values)
-                std_girth = np.std(girth_values)
-            else:
-                mean_girth = girth
-                std_girth = 0.01 * girth
-            if std_girth == 0:
-                std_girth = 0.01 * mean_girth
-            # Simulate variation in girth for training data
+            girths = [helpers.calculate_girth(helpers.assign_skeletal_parts(f)['left_shoulder'],
+                                              helpers.assign_skeletal_parts(f)['right_shoulder'])
+                      for f in frames_all]
+            mean_girth = np.mean(girths) if girths else girth
+            std_girth = np.std(girths) if girths else 0.01 * girth
+            std_girth = std_girth or 0.01 * mean_girth
+
+            # Build training data: simulate variation in girth.
             girth_variation = np.random.uniform(mean_girth - std_girth, mean_girth + std_girth, size=ref_heights.shape)
             X_train = np.column_stack((ref_heights, girth_variation))
             y_train = ref_weights
 
-            reg_model_choice = self.regression_model_var.get().lower()  # 'linear', 'polynomial', 'bayesian', or 'all'
-            regression_models = {}
-            regression_results = ""
+            reg_model_choice = self.regression_model_var.get().lower()  # e.g., 'linear', 'polynomial', 'bayesian', or 'all'
+            model_types = ["linear", "polynomial", "bayesian"] if reg_model_choice == "all" else [reg_model_choice]
+            regression_models = {
+                m: helpers.fit_weight_regression(X_train, y_train, regression_type=m,
+                                                 degree=(2 if m == "polynomial" else 1))
+                for m in model_types
+            }
+
+            # Build results table.
             if reg_model_choice == "all":
-                for model_type in ["linear", "polynomial", "bayesian"]:
-                    degree = 2 if model_type == "polynomial" else 1
-                    model, coeffs = helpers.fit_weight_regression(X_train, y_train, regression_type=model_type, degree=degree)
-                    regression_models[model_type] = (model, coeffs)
-                    regression_results += f"{model_type.capitalize()} Coefficients: {coeffs}\n"
+                regression_results = "Regression Coefficients Table:\n"
+                regression_results += f"{'Model':<12}{'Intercept':>12}{'Height Coef':>16}{'Girth Coef':>16}\n"
+                regression_results += "-" * 56 + "\n"
+                for m, (_, coeffs) in regression_models.items():
+                    intercept = coeffs[0]
+                    height_coef = coeffs[1] if len(coeffs) > 1 else 0.0
+                    girth_coef = coeffs[2] if len(coeffs) > 2 else 0.0
+                    regression_results += f"{m.capitalize():<12}{intercept:12.4f}{height_coef:16.4f}{girth_coef:16.4f}\n"
             else:
-                degree = 2 if reg_model_choice == "polynomial" else 1
-                model, coeffs = helpers.fit_weight_regression(X_train, y_train, regression_type=reg_model_choice, degree=degree)
-                regression_models[reg_model_choice] = (model, coeffs)
+                coeffs = regression_models[reg_model_choice][1]
                 regression_results = f"{reg_model_choice.capitalize()} Coefficients: {coeffs}\n"
 
             result = (f"Estimated Weight for Person {self.person_id_var.get()}, Image {self.image_flag_var.get()}:\n"
                       f"Interpolated Weight: {interpolated_weight:.2f} lbs\n" + regression_results)
             self.preview_text.insert(tk.END, result)
 
-            # Plot regression results:
+            # Plot regression results with dynamic title based on frame mode.
             if reg_model_choice == "all":
-                import matplotlib.patches as mpatches
-                fig = plt.figure()
-                ax = fig.add_subplot(111, projection='3d')
-                ax.scatter(X_train[:, 0], X_train[:, 1], y_train, c='b', label='Original Data', s=50)
-                height_grid = np.linspace(X_train[:, 0].min(), X_train[:, 0].max(), 20)
-                girth_grid = np.linspace(X_train[:, 1].min(), X_train[:, 1].max(), 20)
-                H, G = np.meshgrid(height_grid, girth_grid)
-                grid_points = np.column_stack((H.ravel(), G.ravel()))
-                colors = {'linear': 'r', 'polynomial': 'g', 'bayesian': 'c'}
-                proxy_handles = []
-                for model_type, (model, _) in regression_models.items():
-                    W = model.predict(grid_points).reshape(H.shape)
-                    ax.plot_surface(H, G, W, color=colors[model_type], alpha=0.4)
-                    patch = mpatches.Patch(color=colors[model_type], label=model_type.capitalize())
-                    proxy_handles.append(patch)
-                proxy_handles.append(mpatches.Patch(color='b', label='Original Data'))
-                ax.set_xlabel('Height')
-                ax.set_ylabel('Girth')
-                ax.set_zlabel('Weight')
-                ax.set_title("Regression Surfaces: Linear, Polynomial, Bayesian")
-                ax.legend(handles=proxy_handles, loc='best')
-                plt.show()
+                filename = helpers.plot_regression_results(
+                    X_train, y_train, model=None,
+                    multiple_models=regression_models,
+                    title="Regression Surfaces",
+                    person_id=self.person_id_var.get(),
+                    frame_mode=self.frame_mode_var.get(),
+                    image_flag=self.image_flag_var.get()
+                )
             else:
-                model = list(regression_models.values())[0][0]
-                helpers.plot_regression_results(X_train, y_train, model, title=f"{reg_model_choice.capitalize()} Regression Results")
+                model_to_plot = list(regression_models.values())[0][0]
+                filename = helpers.plot_regression_results(
+                    X_train, y_train, model=model_to_plot,
+                    title=f"{reg_model_choice.capitalize()} Regression Results",
+                    model_label=reg_model_choice,
+                    person_id=self.person_id_var.get(),
+                    frame_mode=self.frame_mode_var.get(),
+                    image_flag=self.image_flag_var.get()
+                )
+            if filename:
+                self.plot_files.append(filename)
+
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -395,9 +399,10 @@ class MainApp(tk.Tk):
 
     def generate_synthetic_op(self):
         try:
-            frame = self.get_selected_frame()
+            # Use a representative frame for measurements.
+            frame = self.get_selected_frame()  # for single frame; adjust if needed for all frames
             parts = helpers.assign_skeletal_parts(frame)
-            girth = helpers.calculate_girth(parts['left_shoulder'], parts['right_shoulder'])
+            girth = float(helpers.calculate_girth(parts['left_shoulder'], parts['right_shoulder']))
             ref_heights = np.array([58, 59, 60, 61, 62, 63, 64, 65, 66, 67, 68, 69, 70, 71, 72, 73, 74, 75, 76])
             ref_weights = np.array(
                 [105, 109, 112, 116, 120, 124, 128, 132, 136, 140, 144, 149, 153, 157, 162, 166, 171, 176, 180])
@@ -408,11 +413,20 @@ class MainApp(tk.Tk):
             girth_range = (girth * 0.9, girth * 1.1)
             X_synth, y_synth = helpers.synthesize_data(model, num_samples=100, height_range=height_range,
                                                        girth_range=girth_range, noise_std=2.0)
-            helpers.plot_synthetic_vs_real(X_train, y_train, X_synth, y_synth)
-            helpers.plot_weight_distribution(y_synth)
-            result = "Synthetic data generated and plots displayed.\n"
+            # Use Person ID and Frame Mode to build a flag string.
+            person_id = self.person_id_var.get()
+            # For single frame, use the selected image flag; for all frames, use "All".
+            image_flag = self.image_flag_var.get() if self.frame_mode_var.get() == "Single Frame" else "All"
+            # Save synthetic plot and distribution plot with dynamic names.
+            synth_filename = helpers.plot_synthetic_vs_real(X_train, y_train, X_synth, y_synth, person_id, image_flag)
+            dist_filename = helpers.plot_weight_distribution(y_synth, person_id, image_flag)
+            # Save these filenames for later export.
+            self.plot_files.append(synth_filename)
+            self.plot_files.append(dist_filename)
+
+            result = "Synthetic data generated and plots saved.\n"
             messagebox.showinfo("Synthetic Data", result)
-            self.dashboard_text.insert(tk.END, result)
+            self.preview_text.insert(tk.END, result)
         except Exception as e:
             messagebox.showerror("Error", str(e))
 
@@ -421,11 +435,6 @@ class MainApp(tk.Tk):
             pdf_file = filedialog.asksaveasfilename(defaultextension=".pdf", filetypes=[("PDF files", "*.pdf")])
             if not pdf_file:
                 return
-
-            from reportlab.lib.pagesizes import letter
-            from reportlab.pdfgen import canvas
-            from reportlab.lib.utils import ImageReader
-
             c = canvas.Canvas(pdf_file, pagesize=letter)
             page_width, page_height = letter
 
