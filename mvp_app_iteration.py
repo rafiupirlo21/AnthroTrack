@@ -19,7 +19,7 @@ or on all available frames for a given Person ID.
 
 Code Running Instructions:
   1. Install dependencies:
-         pip install pip install -r requirements.txtb
+         pip install -r requirements.txt
   2. Place this file along with helper_functions.py in the same folder.
   3. Run:
          python app.py # TODO change to final name
