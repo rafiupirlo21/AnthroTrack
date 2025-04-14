@@ -16,14 +16,13 @@ A Windows app for the ENCM 509 Anthropometric Measurement Project with two tabs:
 Users may choose whether to run operations on a single 20-row block (a specific image frame)
 or on all available frames for a given Person ID.
 
-All styling uses shades of pink.
 
 Code Running Instructions:
   1. Install dependencies:
-         pip install numpy pandas matplotlib scikit-learn scipy reportlab
+         pip install pip install -r requirements.txtb
   2. Place this file along with helper_functions.py in the same folder.
   3. Run:
-         python app.py
+         python app.py # TODO change to final name
 
 Author: [Your Name]
 Date: [Current Date]
@@ -45,7 +44,8 @@ BUTTON_BG = "#FF69B4"     # Hot pink for buttons
 class MainApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("ENCM 509 Anthropometric Measurement App")
+        self.title("AnthroTrack")
+        self.iconbitmap("app_icon.ico")
         self.geometry("900x750")
         self.configure(bg=BG_COLOR)
         self.df = None  # Loaded DataFrame
@@ -93,7 +93,7 @@ class MainApp(tk.Tk):
         tk.Label(me_frame, text="Md Rafiu Hossain", bg=BG_COLOR, font=("Helvetica", 12, "bold")).pack(anchor=tk.W)
         tk.Label(me_frame, text="Electrical Engineering Student", bg=BG_COLOR).pack(anchor=tk.W)
         tk.Button(me_frame, text="LinkedIn", bg=BUTTON_BG, fg="white",
-                  command=lambda: webbrowser.open("https://www.linkedin.com/in/rafiuprofile")).pack(anchor=tk.W, pady=2)
+                  command=lambda: webbrowser.open("https://www.linkedin.com/in/rafiuhossain/")).pack(anchor=tk.W, pady=2)
 
         # Team member 2
         khadiza_frame = tk.Frame(team_frame, bg=BG_COLOR)
@@ -101,13 +101,13 @@ class MainApp(tk.Tk):
         tk.Label(khadiza_frame, text="Khadiza Ahsan", bg=BG_COLOR, font=("Helvetica", 12, "bold")).pack(anchor=tk.W)
         tk.Label(khadiza_frame, text="Biomedical Engineering Student", bg=BG_COLOR).pack(anchor=tk.W)
         tk.Button(khadiza_frame, text="LinkedIn", bg=BUTTON_BG, fg="white",
-                  command=lambda: webbrowser.open("https://www.linkedin.com/in/khadizaprofile")).pack(anchor=tk.W, pady=2)
+                  command=lambda: webbrowser.open("https://www.linkedin.com/in/khadiza-ahsan/")).pack(anchor=tk.W, pady=2)
 
         # "Our App" Section
         app_frame = tk.LabelFrame(self.about_tab, text="Our App", bg=BG_COLOR, font=("Helvetica", 14, "bold"))
         app_frame.pack(fill=tk.X, padx=20, pady=10)
         tk.Label(app_frame,
-                 text="This project uses depth imaging for anthropometric measurements. Our app analyzes data from a depth camera, visualizes 3D skeletal data, and estimates biometric parameters.",
+                 text="ENCM 509 Anthropometric Measurement App: This project uses depth imaging for anthropometric measurements. Our app analyzes data from a depth camera, visualizes 3D skeletal data, and estimates biometric parameters.",
                  bg=BG_COLOR, wraplength=600, justify=tk.LEFT).pack(anchor=tk.W, padx=10, pady=5)
         tk.Button(app_frame, text="View GitHub Code", bg=BUTTON_BG, fg="white",
                   command=lambda: webbrowser.open("https://github.com/yourgithubrepo")).pack(anchor=tk.W, padx=10, pady=5)

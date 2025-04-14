@@ -35,43 +35,41 @@ from sklearn.linear_model import BayesianRidge
 
 # Data Loading and Skeletal Assignment
 
+import pandas as pd
+
 def load_skeletal_data(csv_file):
     """
     Load the CSV file into a pandas DataFrame and ensure the coordinate columns
-    are numeric (float).
-
-    Expected columns in the CSV:
-      ImageFlag, PersonID, x3D (m), y3D (m), z3D (m)
-
-    If your actual CSV has different column names, adjust the renaming step.
+    are numeric (float). If column headers are incorrect, they are fixed and the
+    CSV file is overwritten with the corrected headers.
 
     Parameters:
         csv_file (str): Path to the CSV file.
 
     Returns:
-        pd.DataFrame: DataFrame with columns ['ImageFlag','PersonID','x3D (m)','y3D (m)','z3D (m)'].
+        pd.DataFrame: Cleaned DataFrame with correct column headers.
     """
-    # Read CSV with a header row. If your file has no header, set header=None and rename manually.
-    df = pd.read_csv(csv_file)
-
-    # Optional: If your CSV columns differ, rename them accordingly:
-    # e.g., df.columns = ["ImageFlag", "PersonID", "x3D (m)", "y3D (m)", "z3D (m)"]
-    # If your file already has the correct header, you can skip or adjust this step.
-
     expected_cols = ["ImageFlag", "ID", "x3D (m)", "y3D (m)", "z3D (m)"]
-    if list(df.columns[:5]) != expected_cols:
-        df.columns = expected_cols
 
-    # Convert coordinate columns to numeric (float)
+    # Read the CSV
+    df = pd.read_csv(csv_file, header=0)
+
+    # Fix headers if needed
+    if not all(col in df.columns[:5] for col in expected_cols):
+        print("[INFO] Column headers do not match expected format. Fixing headers...")
+        df.columns.values[:5] = expected_cols
+        df.to_csv(csv_file, index=False)  # Overwrite the original file
+        print(f"[INFO] Headers corrected and saved to: {csv_file}")
+
+    # Convert coordinate columns to numeric
     for col in ["x3D (m)", "y3D (m)", "z3D (m)"]:
         df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    # Check for any NaN values that might indicate non-numeric data
+    # Raise an error if invalid numbers exist
     if df[["x3D (m)", "y3D (m)", "z3D (m)"]].isnull().any().any():
         raise ValueError("Some x3D (m), y3D (m), or z3D (m) values could not be converted to float.")
 
     return df
-
 
 def get_image_frame_by_id(df, person_id, image_flag):
     """
