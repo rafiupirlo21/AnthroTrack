@@ -22,10 +22,9 @@ Code Running Instructions:
          pip install -r requirements.txt
   2. Place this file along with helper_functions.py in the same folder.
   3. Run:
-         python app.py # TODO change to final name
+         python AnthroTrackApp.py
 
-Author: [Your Name]
-Date: [Current Date]
+Authors: Md Rafiu Hossain, Khadiza Ahsan
 """
 
 import tkinter as tk
@@ -87,8 +86,18 @@ class MainApp(tk.Tk):
         self.create_main_tab()
 
     def create_about_tab(self):
+
+        # "Our App" Section
+        app_frame = tk.LabelFrame(self.about_tab, text="Our App", bg=BG_COLOR, font=("Helvetica", 16, "bold"))
+        app_frame.pack(fill=tk.X, padx=30, pady=10)
+        tk.Label(app_frame,
+                 text="ENCM 509 Anthropometric Measurement App: This project uses depth imaging for anthropometric measurements. Our app analyzes data from a depth camera, visualizes 3D skeletal data, and estimates biometric parameters.",
+                 bg=BG_COLOR, wraplength=600, justify=tk.LEFT).pack(anchor=tk.W, padx=10, pady=5)
+        tk.Button(app_frame, text="View GitHub Code", bg=BUTTON_BG, fg="white",
+                  command=lambda: webbrowser.open("https://github.com/rafiupirlo21/AnthroTrack")).pack(anchor=tk.W, padx=10, pady=5)
+
         # "Our Team" Section
-        team_frame = tk.LabelFrame(self.about_tab, text="Our Team", bg=BG_COLOR, font=("Helvetica", 14, "bold"))
+        team_frame = tk.LabelFrame(self.about_tab, text="Our Team", bg=BG_COLOR, font=("Helvetica", 16, "bold"))
         team_frame.pack(fill=tk.X, padx=20, pady=10)
 
         # Team member 1
@@ -106,15 +115,6 @@ class MainApp(tk.Tk):
         tk.Label(khadiza_frame, text="Biomedical Engineering Student", bg=BG_COLOR).pack(anchor=tk.W)
         tk.Button(khadiza_frame, text="LinkedIn", bg=BUTTON_BG, fg="white",
                   command=lambda: webbrowser.open("https://www.linkedin.com/in/khadiza-ahsan/")).pack(anchor=tk.W, pady=2)
-
-        # "Our App" Section
-        app_frame = tk.LabelFrame(self.about_tab, text="Our App", bg=BG_COLOR, font=("Helvetica", 14, "bold"))
-        app_frame.pack(fill=tk.X, padx=20, pady=10)
-        tk.Label(app_frame,
-                 text="ENCM 509 Anthropometric Measurement App: This project uses depth imaging for anthropometric measurements. Our app analyzes data from a depth camera, visualizes 3D skeletal data, and estimates biometric parameters.",
-                 bg=BG_COLOR, wraplength=600, justify=tk.LEFT).pack(anchor=tk.W, padx=10, pady=5)
-        tk.Button(app_frame, text="View GitHub Code", bg=BUTTON_BG, fg="white",
-                  command=lambda: webbrowser.open("https://github.com/yourgithubrepo")).pack(anchor=tk.W, padx=10, pady=5)
 
     def create_main_tab(self):
         # Top frame for selection controls
