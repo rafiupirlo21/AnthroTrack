@@ -17,4 +17,6 @@ This project helps standardize contactless biometric screening, and empowers fro
    ```bash
    pip install -r requirements.txt
 4. Make sure both AnthroTrackApp.py and helper_functions.py are in the same folder
-5. python AnthroTrackApp.py
+5. Run the app
+   '''bash
+   python AnthroTrackApp.py
